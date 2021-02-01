@@ -10,6 +10,7 @@ import 'presentation/screens/wallet_create_page.dart';
 import 'presentation/screens/wallet_import_page.dart';
 import 'presentation/screens/wallet_main_page.dart';
 import 'presentation/screens/wallet_market.dart';
+import 'presentation/screens/test_screen.dart';
 import 'presentation/screens/wallet_transfer_page.dart';
 import 'presentation/screens/qrcode_reader_page.dart';
 import 'service/configuration_service.dart';
@@ -50,6 +51,7 @@ Map<String, WidgetBuilder> getRoutes(context) {
     '/qrcode_reader': (BuildContext context) => QRCodeReaderPage(
           title: "Scan QRCode",
           onScanned: ModalRoute.of(context).settings.arguments,
-        )
+        ),
+    '/test': (BuildContext context) => TestScreen()
   };
 }

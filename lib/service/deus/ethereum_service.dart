@@ -19,44 +19,51 @@ class EthereumService {
     42: "Kovan",
   };
 
+  // IMPORTANT use http instead of wss infura endpoint, web3dart not supporting wss yet
   String get INFURA_URL =>
-      'wss://' +
+      'https://' +
       networkName +
-      '.infura.io/ws/v3/cf6ea736e00b4ee4bc43dfdb68f51093';
-
+      '.infura.io/v3/cf6ea736e00b4ee4bc43dfdb68f51093';
 
   EthereumService(this.chainId) {
     httpClient = new Client();
     ethClient = new Web3Client(INFURA_URL, httpClient);
   }
 
+  Future<DeployedContract> loadTokenContract(String tokenName) async {
+    String allAbis = await rootBundle.loadString(ABIS_PATH);
+
+    final decodedAbis = jsonDecode(allAbis);
+    final abiCode = jsonEncode(decodedAbis["token"]);
+    final contractAddress = await getTokenAddr(tokenName);
+    return DeployedContract(
+        ContractAbi.fromJson(abiCode, tokenName), contractAddress);
+  }
+
   Future<DeployedContract> loadContract(String contractName) async {
     String allAbis = await rootBundle.loadString(ABIS_PATH);
     final decodedAbis = jsonDecode(allAbis);
     final abiCode = jsonEncode(decodedAbis[contractName]);
-
     final contractAddress = await getContractAddress(contractName);
-
-    // String abiCode = await rootBundle.loadString(abiPath);
-
     return DeployedContract(
         ContractAbi.fromJson(abiCode, contractName), contractAddress);
   }
 
-  String get networkName => NETWORK_NAMES[this.chainId.toString()];
+  String get networkName => NETWORK_NAMES[this.chainId];
 
   // will probably throw error since addresses is not complete
   Future<EthereumAddress> getContractAddress(String contractName) async {
-    String allAddresses = await rootBundle.loadString(ABIS_PATH);
+    String allAddresses = await rootBundle.loadString(ADDRESSES_PATH);
     final decodedAddresses = jsonDecode(allAddresses);
     final hexAddress = decodedAddresses[contractName][chainId.toString()];
     return EthereumAddress.fromHex(hexAddress);
   }
 
-  _getTokenAddress(String tokenName) async {
-    String allAddresses = await rootBundle.loadString(ABIS_PATH);
+  Future<EthereumAddress> getTokenAddr(String tokenName) async {
+    String allAddresses = await rootBundle.loadString(ADDRESSES_PATH);
     final decodedAddresses = jsonDecode(allAddresses);
-    return decodedAddresses["token"][tokenName][chainId.toString()];
+    final hexAddress = decodedAddresses["token"][tokenName][chainId.toString()];
+    return EthereumAddress.fromHex(hexAddress);
   }
 
   Future<EtherAmount> getEtherBalance(Credentials credentials) async {
@@ -71,13 +78,13 @@ class EthereumService {
     final ethFunction = contract.function(functionName);
 
     var result = await ethClient.sendTransaction(
-      credentials,
-      Transaction.callContract(
-        contract: contract,
-        function: ethFunction,
-        parameters: args,
-      ),
-    );
+        credentials,
+        Transaction.callContract(
+          contract: contract,
+          function: ethFunction,
+          parameters: args,
+        ),
+        chainId: chainId);
     return result;
   }
 
@@ -88,4 +95,18 @@ class EthereumService {
         contract: contract, function: ethFunction, params: args);
     return data;
   }
+
+  // Function to get receipt
+  Future<TransactionReceipt> _getReceipt(String txHash) async {
+    return await ethClient.getTransactionReceipt(txHash);
+  }
+
+  Future<Credentials> credentialsForKey(String privateKey) {
+    return ethClient.credentialsFromPrivateKey(privateKey);
+  }
+
+// void addBlockListener(listener){
+//   ethClient.addedBlocks(listener);
+//   ethClient.
+// }
 }
