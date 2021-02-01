@@ -82,6 +82,15 @@ class DeusSwapServiceAlt {
     return ans;
   }
 
+  Future<List<String>> _getPath(from, to) async {
+    String allPaths = await rootBundle.loadString(GRAPHBK_PATH);
+    final decodedPaths = jsonDecode(allPaths);
+    final path = (decodedPaths[from][to] as List<dynamic>)
+        .map((e) => e.toString())
+        .toList();
+    return path;
+  }
+
   Future<double> getTokenBalance(tokenName) async {
     if (!this.checkWallet()) return 0;
 
@@ -104,7 +113,7 @@ class DeusSwapServiceAlt {
     // final tokenContract = await ethereumService.loadContract("token");
     final tokenContract = await ethService.loadTokenContract(token);
     var maxAmount = BigInt.from(pow(10, 20));
-    amount = max(amount, maxAmount);
+    amount = (amount > maxAmount) ? amount : maxAmount;
 
     final swapContractAddress =
         await ethService.getContractAddress("deus_swap_contract");
@@ -128,102 +137,310 @@ class DeusSwapServiceAlt {
     return _fromWei(allowance, tokenName);
   }
 
-  swapTokens(fromToken, toToken, tokenAmount, listener) async {}
+  Future<String> swapTokens(fromToken, toToken, tokenAmount, listener) async {
+    if (!this.checkWallet()) return null;
+    var path = await _getPath(fromToken, toToken);
 
-  getWithdrawableAmount() async {}
+    if (fromToken == "coinbase") {
+      if (toToken == "deus") {
+        return _deusSwapTokensForTokens(tokenAmount, fromToken, 8, [], []);
+      } else if (toToken == "eth") {
+        return _deusSwapTokensForEth(tokenAmount, fromToken, 2, []);
+      } else {
+        if (path[2] == await ethService.getTokenAddrHex("weth")) {
+          var path1 = path.sublist(2);
+          return _deusSwapTokensForTokens(
+              tokenAmount, fromToken, 4, _pathListToAddresses(path1), []);
+        } else {
+          var path1 = path.sublist(1);
+          return _deusSwapTokensForTokens(
+              tokenAmount, fromToken, 3, _pathListToAddresses(path1), []);
+        }
+      }
+    } else if (toToken == "coinbase") {
+      if (fromToken == "deus") {
+        return _deusSwapTokensForTokens(tokenAmount, fromToken, 7, [], []);
+      } else if (fromToken == 'eth') {
+        return _deusSwapEthForTokens(tokenAmount, fromToken, 2, []);
+      } else {
+        if (path[path.length - 3] == await ethService.getTokenAddrHex("weth")) {
+          final path1 = path.sublist(0, path.length - 2);
+          return _deusSwapTokensForTokens(
+              tokenAmount, fromToken, 5, _pathListToAddresses(path1), []);
+        } else {
+          final path1 = path.sublist(0, path.length - 1);
+          return _deusSwapTokensForTokens(
+              tokenAmount, fromToken, 6, _pathListToAddresses(path1), []);
+        }
+      }
+      ///////////
+    } else {
+      if (fromToken == 'eth') {
+        if (path[1] == await ethService.getTokenAddrHex("deus")) {
+          path = path.sublist(1);
+          return _deusSwapEthForTokens(
+              tokenAmount, fromToken, 0, _pathListToAddresses(path));
+        } else {
+          return _deusSwapEthForTokens(
+              tokenAmount, fromToken, 1, _pathListToAddresses(path));
+        }
+      } else if (toToken == 'eth') {
+        if (path[path.length - 2] == await ethService.getTokenAddrHex("deus")) {
+          path = path.sublist(0, path.length - 1);
+          return _deusSwapTokensForEth(
+              tokenAmount, fromToken, 0, _pathListToAddresses(path));
+        } else {
+          return _deusSwapTokensForEth(
+              tokenAmount, fromToken, 1, _pathListToAddresses(path));
+        }
+      } else {
+        var indexOfDeus =
+            path.indexOf(await ethService.getTokenAddrHex("deus"));
+        if (indexOfDeus != -1) {
+          if (indexOfDeus < path.length - 1) {
+            final path1 = path.sublist(0, indexOfDeus + 1);
+            final path2 = path.sublist(indexOfDeus + 1);
+            return _deusSwapTokensForTokens(tokenAmount, fromToken, 1,
+                _pathListToAddresses(path1), _pathListToAddresses(path2));
+          } else if (indexOfDeus > 0) {
+            final path1 = path.sublist(0, indexOfDeus);
+            final path2 = path.sublist(indexOfDeus);
+            return _deusSwapTokensForTokens(tokenAmount, fromToken, 0,
+                _pathListToAddresses(path1), _pathListToAddresses(path2));
+          }
+        } else {
+          return _deusSwapTokensForTokens(
+              tokenAmount, fromToken, 2, _pathListToAddresses(path), []);
+        }
+      }
+    }
+  }
 
-  withdrawPayment(listener) async {}
+  List<EthereumAddress> _pathListToAddresses(List<String> paths) {
+    return paths.map((path) => EthereumAddress.fromHex(path)).toList();
+  }
 
-  getAmountsOut(fromToken, toToken, amountIn) async {
-    if (!checkWallet()) return 0;
+  Future<String> _deusSwapTokensForTokens(
+      BigInt tokenAmount,
+      String fromToken,
+      int swapType,
+      List<EthereumAddress> path1,
+      List<EthereumAddress> path2) async {
+    final wei = this._getWei(tokenAmount, fromToken);
+    return ethService.submit(await credentials, deusSwapContract,
+        "swapTokensForTokens", [wei, swapType, path1, path2]);
+  }
+
+  Future<String> _deusSwapTokensForEth(BigInt tokenAmount, String fromToken,
+      int swapType, List<EthereumAddress> path) async {
+    final wei = this._getWei(tokenAmount, fromToken);
+
+    return ethService.submit(await credentials, deusSwapContract,
+        "swapTokensForEth", [wei, swapType, path]);
+  }
+
+  Future<String> _deusSwapEthForTokens(BigInt tokenAmount, String fromToken,
+      int swapType, List<EthereumAddress> path) async {
+    return ethService.submit(await credentials, deusSwapContract,
+        "swapEthForTokens", [path, swapType],
+        value: EtherAmount.inWei(this._getWei(tokenAmount, fromToken)));
+  }
+
+  Future<String> getWithdrawableAmount() async {
+    if (!checkWallet()) return "0";
+    final amount = await ethService
+        .query(automaticMarketMakerContract, "payments", [await address]);
+    return _fromWei(amount.first, "ether");
+  }
+
+  Future<String> withdrawPayment(listener) async {
+    return ethService.submit(await credentials, automaticMarketMakerContract,
+        "withdrawPayments", [await address]);
+  }
+
+  Future<String> getAmountsOut(
+      String fromToken, String toToken, BigInt amountIn) async {
+    if (!checkWallet()) return "0";
 
     var path = await _getPath(fromToken, toToken);
 
     if (ethService.getTokenAddr(fromToken) == ethService.getTokenAddr("deus") &&
         ethService.getTokenAddr(toToken) == ethService.getTokenAddr("eth")) {
-      final result = await ethService.query(automaticMarketMakerContract,
-          "calculateSaleReturn", [_getWei(amountIn, fromToken)]);
+      final result = await _ammSaleReturn(amountIn, fromToken);
 
-      return _fromWei(result.single as BigInt, toToken);
+      return _fromWei(result, toToken);
     } else if (ethService.getTokenAddr(fromToken) ==
             ethService.getTokenAddr("eth") &&
         ethService.getTokenAddr(toToken) == ethService.getTokenAddr("deus")) {
-      final result = await ethService.query(automaticMarketMakerContract,
-          "calculatePurchaseReturn", [_getWei(amountIn, fromToken)]);
+      final result = await _ammPurchaseReturn(amountIn, fromToken);
 
-      return _fromWei(result.single as BigInt, toToken);
+      return _fromWei(result, toToken);
     }
 
-    if (path[0] == (await ethService.getTokenAddr("coinbase")).hex) {
+    if (path[0] == await ethService.getTokenAddrHex("coinbase")) {
       if (path.length < 3) {
-        final result = await ethService.query(staticSalePrice,
-            "calculateSaleReturn", [this._getWei(amountIn, fromToken)]);
-        return this._fromWei(result[0], toToken);
+        final result = await _staticPriceSaleReturn(amountIn, fromToken);
+        return this._fromWei(result, toToken);
       }
 
       path = path.sublist(1);
 
-      if (path[1] == (await ethService.getTokenAddr("weth")).hex) {
-        var tokenAmount = await ethService.query(staticSalePrice,
-            "calculateSaleReturn", [this._getWei(amountIn, fromToken)]);
-        var etherAmount = await ethService.query(automaticMarketMakerContract,
-            "calculateSaleReturn", [tokenAmount.single]);
+      if (path[1] == await ethService.getTokenAddrHex("weth")) {
+        var tokenAmount = await _staticPriceSaleReturn(amountIn, fromToken);
+        var etherAmount = await _ammSaleReturn(tokenAmount);
         path = path.sublist(1);
         if (path.length < 2) {
-          return this._fromWei(etherAmount.single, toToken);
+          return this._fromWei(etherAmount, toToken);
         } else {
-          var amountsOut = await ethService.query(uniswapRouter,
-              "getAmountsOut", [this._getWei(etherAmount.single, fromToken)]);
-          return this._fromWei(amountsOut[amountsOut.length - 1], toToken);
+          var amountsOut = await _uniSwapAmountOut(amountIn, path);
+          return this._fromWei(amountsOut, toToken);
         }
       } else {
-        final etherAmount = await ethService.query(staticSalePrice,
-            "calculateSaleReturn", [this._getWei(amountIn, fromToken)]);
-        final amountsOut = await ethService.query(
-            uniswapRouter, "getAmountsOut", [etherAmount[0], path.first]);
-        return this._fromWei(amountsOut[amountsOut.length - 1], toToken);
+        final etherAmount = await _staticPriceSaleReturn(amountIn, fromToken);
+
+        final amountsOut = await _uniSwapAmountOut(etherAmount, path);
+
+        return this._fromWei(amountsOut, toToken);
       }
     } else if (path[path.length - 1] ==
-        (await ethService.getTokenAddr("coinbase")).hex) {
+        await ethService.getTokenAddrHex("coinbase")) {
       if (path.length < 3) {
-        var tokenAmount = await ethService.query(staticSalePrice,
-            "calculateSaleReturn", [this._getWei(amountIn, fromToken)]);
-        return this._fromWei(tokenAmount[0], toToken);
+        final tokenAmount =
+            await _staticPricePurchaseReturn(amountIn, fromToken);
+        return this._fromWei(tokenAmount, toToken);
       }
       path = path.sublist(0, path.length - 1);
-      if (path[path.length - 2] ==
-          (await ethService.getTokenAddr("weth")).hex) {
+      if (path[path.length - 2] == await ethService.getTokenAddrHex("weth")) {
         if (path.length > 2) {
           path = path.sublist(0, path.length - 1);
-          final amountOut = await _uniSwapAmountOut(amountIn, path, fromToken);
+          final amountOut = await _uniSwapAmountOut(
+            amountIn,
+            path,
+            fromToken,
+          );
           final tokenAmount = await _ammPurchaseReturn(amountOut);
-          final amountOutStatic =
-              await _staticSalePricePurchaseReturn(tokenAmount);
+          final amountOutStatic = await _staticPricePurchaseReturn(tokenAmount);
           return _fromWei(amountOutStatic, toToken);
         } else {
           final tokenAmount = await _ammPurchaseReturn(amountIn, fromToken);
-          final amountOut = await _staticSalePricePurchaseReturn(tokenAmount);
+          final amountOut = await _staticPricePurchaseReturn(tokenAmount);
           return this._fromWei(amountOut, toToken);
         }
       } else {
         final amountsOut = await _uniSwapAmountOut(amountIn, path, fromToken);
-        final tokenAmount = await _staticSalePricePurchaseReturn(amountsOut);
+        final tokenAmount = await _staticPricePurchaseReturn(amountsOut);
         return this._fromWei(tokenAmount, toToken);
       }
     } else {
-      final deusAddress = (await ethService.getTokenAddr("deus")).hex;
-      bool isDeusAddress(String element) => element == deusAddress;
-      final indexOfDeus = path.firstWhere(isDeusAddress);
+      final deusAddress = await ethService.getTokenAddrHex("deus");
+      final indexOfDeus = path.indexOf(deusAddress);
+
+      if (indexOfDeus == -1) {
+        final amountsOut = await _uniSwapAmountOut(amountIn, path, fromToken);
+        return _fromWei(amountsOut, toToken);
+      } else {
+        if (indexOfDeus == path.length - 1) {
+          if (path[path.length - 2] ==
+              await ethService.getTokenAddrHex("weth")) {
+            path = path.sublist(0, path.length - 1);
+            final amountsOut =
+                await _uniSwapAmountOut(amountIn, path, fromToken);
+            final tokenAmount = await _ammPurchaseReturn(amountsOut);
+            return this._fromWei(tokenAmount, toToken);
+          } else {
+            final amountsOut =
+                await _uniSwapAmountOut(amountIn, path, fromToken);
+            return this._fromWei(amountsOut, toToken);
+          }
+        } else if (indexOfDeus == 0) {
+          if (path[1] == await ethService.getTokenAddrHex("weth")) {
+            path = path.sublist(1);
+            final tokenAmount = await _ammSaleReturn(amountIn, fromToken);
+            final amountOut = await _uniSwapAmountOut(tokenAmount, path);
+            return _fromWei(amountOut, toToken);
+          } else {
+            final amountsOut =
+                await _uniSwapAmountOut(amountIn, path, fromToken);
+            return this._fromWei(amountsOut, toToken);
+          }
+        } else {
+          if (path[indexOfDeus - 1] ==
+              await ethService.getTokenAddrHex("weth")) {
+            final path1 = path.sublist(0, indexOfDeus);
+            final path2 = path.sublist(indexOfDeus);
+            if (path1.length > 1) {
+              final amountsOut =
+                  await _uniSwapAmountOut(amountIn, path1, fromToken);
+
+              final tokenAmount = await _ammPurchaseReturn(amountsOut);
+              if (path2.length > 1) {
+                final amountOut = await _uniSwapAmountOut(
+                  tokenAmount,
+                  path2,
+                );
+                return this._fromWei(amountOut, toToken);
+              } else {
+                return this._fromWei(tokenAmount, toToken);
+              }
+            } else {
+              final tokenAmount = await _ammPurchaseReturn(amountIn, fromToken);
+              if (path2.length > 1) {
+                final amountOut = await _uniSwapAmountOut(
+                  tokenAmount,
+                  path2,
+                );
+                return this._fromWei(amountOut, toToken);
+              } else {
+                return this._fromWei(tokenAmount, toToken);
+              }
+            }
+          } else if (path[indexOfDeus + 1] ==
+              await ethService.getTokenAddrHex("weth")) {
+            final path1 = path.sublist(0, indexOfDeus + 1);
+            final path2 = path.sublist(indexOfDeus + 1);
+            if (path1.length > 1) {
+              final amountsOut2 =
+                  await _uniSwapAmountOut(amountIn, path1, fromToken);
+              final tokenAmount = await _ammSaleReturn(amountsOut2);
+              if (path2.length > 1) {
+                final amountOut = await _uniSwapAmountOut(
+                  tokenAmount,
+                  path2,
+                );
+                return this._fromWei(amountOut, toToken);
+              } else {
+                return this._fromWei(tokenAmount, toToken);
+              }
+            } else {
+              final tokenAmount = await _ammSaleReturn(amountIn, fromToken);
+              if (path2.length > 1) {
+                final amountOut = await _uniSwapAmountOut(
+                  tokenAmount,
+                  path2,
+                );
+                return this._fromWei(amountOut, toToken);
+              } else {
+                return this._fromWei(tokenAmount, toToken);
+              }
+            }
+          } else {
+            final amountsOut =
+                await _uniSwapAmountOut(amountIn, path, fromToken);
+            return this._fromWei(amountsOut, toToken);
+          }
+        }
+      }
     }
   }
 
   Future<BigInt> _uniSwapAmountOut(BigInt amountIn, List<String> path,
       [String fromToken]) async {
+    List<EthereumAddress> addressPath = _pathListToAddresses(path);
     final computeAmountInt =
         fromToken != null ? this._getWei(amountIn, fromToken) : amountIn;
     final result = await ethService
-        .query(uniswapRouter, "getAmountsOut", [computeAmountInt, path.first]);
-    return result[0] as BigInt;
+        .query(uniswapRouter, "getAmountsOut", [computeAmountInt, addressPath]);
+    return result[result.length - 1] as BigInt;
   }
 
   Future<BigInt> _ammPurchaseReturn(BigInt amountIn, [String fromToken]) async {
@@ -234,12 +451,29 @@ class DeusSwapServiceAlt {
     return result[0] as BigInt;
   }
 
-  Future<BigInt> _staticSalePricePurchaseReturn(BigInt amountIn,
+  Future<BigInt> _ammSaleReturn(BigInt amountIn, [String fromToken]) async {
+    final computeAmountInt =
+        fromToken != null ? this._getWei(amountIn, fromToken) : amountIn;
+    final result = await ethService.query(automaticMarketMakerContract,
+        "calculateSaleReturn", [computeAmountInt]);
+    return result[0] as BigInt;
+  }
+
+  Future<BigInt> _staticPricePurchaseReturn(BigInt amountIn,
       [String fromToken]) async {
     final computeAmountInt =
         fromToken != null ? this._getWei(amountIn, fromToken) : amountIn;
     final result = await ethService
         .query(staticSalePrice, "calculatePurchaseReturn", [computeAmountInt]);
+    return result[0] as BigInt;
+  }
+
+  Future<BigInt> _staticPriceSaleReturn(BigInt amountIn,
+      [String fromToken]) async {
+    final computeAmountInt =
+        fromToken != null ? this._getWei(amountIn, fromToken) : amountIn;
+    final result = await ethService
+        .query(staticSalePrice, "calculateSaleReturn", [computeAmountInt]);
     return result[0] as BigInt;
   }
 
@@ -252,7 +486,8 @@ class DeusSwapServiceAlt {
 
     final tokenContract = await ethService.loadTokenContract("dai");
     var maxAmount = BigInt.from(pow(10, 20));
-    amount = max(amount, maxAmount);
+    amount = (amount > maxAmount) ? amount : maxAmount;
+
     final wei = _getWei(amount, "ether");
     final result = await ethService.submit(
         await credentials,
@@ -293,11 +528,5 @@ class DeusSwapServiceAlt {
     final result = await ethService.submit(await credentials, stockContract,
         "sellStock", [stockAddr, amount, blockNo, v, r, s, price, fee]);
     return result;
-  }
-
-  Future<List<String>> _getPath(from, to) async {
-    String allPaths = await rootBundle.loadString(GRAPHBK_PATH);
-    final decodedPaths = jsonDecode(allPaths);
-    return decodedPaths[from][to];
   }
 }

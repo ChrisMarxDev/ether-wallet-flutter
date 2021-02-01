@@ -10,14 +10,19 @@ class TestScreen extends StatefulWidget {
 
 class _TestScreenState extends State<TestScreen> {
   DeusSwapServiceAlt swapService;
+  EthereumService ethereumService;
+
   String allowance;
   String appovalHash;
+  String receipt;
+  String amountOut;
 
   @override
   void initState() {
     super.initState();
+    ethereumService = EthereumService(4);
     swapService = DeusSwapServiceAlt(
-        ethService: EthereumService(4),
+        ethService: ethereumService,
         privateKey:
             "0xbba655b0a39daea9270bbb15715c0574f1fe3409ab0b551c3fe90aace22225fc");
   }
@@ -54,11 +59,32 @@ class _TestScreenState extends State<TestScreen> {
                 print("Approve");
               },
             ),
-            SelectableText(appovalHash ?? "Empty")
+            SelectableText(appovalHash ?? "Empty"),
+            RaisedButton(
+              child: Text("Get Receipt"),
+              onPressed: () async {
+                var result =
+                    await ethereumService.getTransactionReceipt(appovalHash);
+                setState(() {
+                  receipt = "from: ${result.from}; to: ${result.to}; status: ${result.status}; hash: ${result.transactionHash}; blockNumber: ${result.blockNumber.blockNum};";
+                });
+              },
+            ),
+            SelectableText(receipt ?? "Empty"),
+            RaisedButton(
+              child: Text("getAmountsOut"),
+              onPressed: () async {
+                await swapService
+                    .getAmountsOut("deus", "eth", BigInt.from(1000))
+                    .then((value) => setState(() {
+                  amountOut = value;
+                        }));
+              },
+            ),
+            SelectableText(amountOut ?? "Empty")
           ],
         ),
       ),
     );
   }
-
 }

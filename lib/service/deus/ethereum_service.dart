@@ -66,6 +66,10 @@ class EthereumService {
     return EthereumAddress.fromHex(hexAddress);
   }
 
+  Future<String> getTokenAddrHex(String tokenName) async {
+    return (await getTokenAddr(tokenName)).hex;
+  }
+
   Future<EtherAmount> getEtherBalance(Credentials credentials) async {
     return await ethClient.getBalance(await credentials.extractAddress());
   }
@@ -74,7 +78,7 @@ class EthereumService {
   /// calls deploayed [contract] with the function [functionName] supplying all [args] in order of appearence in the api
   /// returns a [String] containing the tx hash which can be used to acquire further information about the tx
   Future<String> submit(Credentials credentials, DeployedContract contract,
-      String functionName, List<dynamic> args) async {
+      String functionName, List<dynamic> args, {EtherAmount value}) async {
     final ethFunction = contract.function(functionName);
 
     var result = await ethClient.sendTransaction(
@@ -83,6 +87,7 @@ class EthereumService {
           contract: contract,
           function: ethFunction,
           parameters: args,
+          value: value
         ),
         chainId: chainId);
     return result;
@@ -97,7 +102,7 @@ class EthereumService {
   }
 
   // Function to get receipt
-  Future<TransactionReceipt> _getReceipt(String txHash) async {
+  Future<TransactionReceipt> getTransactionReceipt(String txHash) async {
     return await ethClient.getTransactionReceipt(txHash);
   }
 
