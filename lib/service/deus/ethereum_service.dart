@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
@@ -78,17 +79,17 @@ class EthereumService {
   /// calls deploayed [contract] with the function [functionName] supplying all [args] in order of appearence in the api
   /// returns a [String] containing the tx hash which can be used to acquire further information about the tx
   Future<String> submit(Credentials credentials, DeployedContract contract,
-      String functionName, List<dynamic> args, {EtherAmount value}) async {
+      String functionName, List<dynamic> args,
+      {EtherAmount value}) async {
     final ethFunction = contract.function(functionName);
 
     var result = await ethClient.sendTransaction(
         credentials,
         Transaction.callContract(
-          contract: contract,
-          function: ethFunction,
-          parameters: args,
-          value: value
-        ),
+            contract: contract,
+            function: ethFunction,
+            parameters: args,
+            value: value),
         chainId: chainId);
     return result;
   }
@@ -104,6 +105,32 @@ class EthereumService {
   // Function to get receipt
   Future<TransactionReceipt> getTransactionReceipt(String txHash) async {
     return await ethClient.getTransactionReceipt(txHash);
+  }
+
+  Stream<TransactionReceipt> pollTransactionReceipt(String txHash,
+      {int pollingTimeMs = 3000}) async* {
+    StreamController<TransactionReceipt> controller = StreamController();
+    Timer timer;
+
+    Future<void> tick() async {
+      var receipt = await getTransactionReceipt(txHash);
+      if (receipt != null && !controller.isClosed) {
+        timer?.cancel();
+        controller.add(receipt);
+        controller.close();
+      }
+    }
+
+    // start first tick before timer if the receipt is available immediately
+    tick();
+
+    if (!controller.isClosed) {
+      Timer.periodic(Duration(milliseconds: pollingTimeMs), (timer) async {
+        await tick();
+      });
+    }
+
+    yield* controller.stream;
   }
 
   Future<Credentials> credentialsForKey(String privateKey) {

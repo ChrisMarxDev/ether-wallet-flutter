@@ -15,6 +15,7 @@ class _TestScreenState extends State<TestScreen> {
   String allowance;
   String appovalHash;
   String receipt;
+  String receiptStream;
   String amountOut;
 
   @override
@@ -62,22 +63,49 @@ class _TestScreenState extends State<TestScreen> {
             SelectableText(appovalHash ?? "Empty"),
             RaisedButton(
               child: Text("Get Receipt"),
-              onPressed: () async {
-                var result =
-                    await ethereumService.getTransactionReceipt(appovalHash);
-                setState(() {
-                  receipt = "from: ${result.from}; to: ${result.to}; status: ${result.status}; hash: ${result.transactionHash}; blockNumber: ${result.blockNumber.blockNum};";
-                });
-              },
+              onPressed: appovalHash == null || appovalHash.isEmpty
+                  ? null
+                  : () async {
+                      var result = await ethereumService
+                          .getTransactionReceipt(appovalHash);
+                      setState(() {
+                        if (result == null) {
+                          receipt = "Currently null";
+                        } else {
+                          receipt =
+                              "from: ${result.from}; to: ${result.to}; status: ${result.status}; hash: ${result.transactionHash}; blockNumber: ${result.blockNumber.blockNum};";
+                        }
+                      });
+                    },
             ),
             SelectableText(receipt ?? "Empty"),
+            RaisedButton(
+              child: Text("Get Receipt Stream"),
+              onPressed: appovalHash == null || appovalHash.isEmpty
+                  ? null
+                  : () async {
+                      ethereumService
+                          .pollTransactionReceipt(appovalHash, pollingTimeMs: 1000)
+                          .listen((result) {
+                        setState(() {
+                          if (result == null) {
+                            receiptStream = "Currently null";
+                          } else {
+                            receiptStream =
+                                "from: ${result.from}; to: ${result.to}; status: ${result.status}; hash: ${result.transactionHash}; blockNumber: ${result.blockNumber.blockNum};";
+                          }
+                        });
+                      });
+                    },
+            ),
+            SelectableText(receiptStream ?? "Empty"),
             RaisedButton(
               child: Text("getAmountsOut"),
               onPressed: () async {
                 await swapService
                     .getAmountsOut("deus", "eth", BigInt.from(1000))
                     .then((value) => setState(() {
-                  amountOut = value;
+                          amountOut = value;
                         }));
               },
             ),

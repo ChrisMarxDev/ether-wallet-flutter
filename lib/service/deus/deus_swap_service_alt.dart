@@ -91,20 +91,21 @@ class DeusSwapServiceAlt {
     return path;
   }
 
-  Future<double> getTokenBalance(tokenName) async {
-    if (!this.checkWallet()) return 0;
+  Future<String> getTokenBalance(tokenName) async {
+    if (!this.checkWallet()) return "0";
 
     if (tokenName == "eth") {
       return (await ethService.getEtherBalance(await credentials))
           .getInEther
-          .toDouble();
+          .toString();
     }
     final tokenContract = await ethService.loadContract("token");
 
     EthereumAddress address = await (await credentials).extractAddress();
     final result =
         await ethService.query(tokenContract, "balanceOf", [address]);
-    return result.single;
+
+    return this._fromWei(result.single, tokenName);
   }
 
   Future<String> approve(String token, BigInt amount) async {
@@ -137,6 +138,7 @@ class DeusSwapServiceAlt {
     return _fromWei(allowance, tokenName);
   }
 
+  // TODO make bigint
   Future<String> swapTokens(fromToken, toToken, tokenAmount, listener) async {
     if (!this.checkWallet()) return null;
     var path = await _getPath(fromToken, toToken);
@@ -228,7 +230,7 @@ class DeusSwapServiceAlt {
       List<EthereumAddress> path2) async {
     final wei = this._getWei(tokenAmount, fromToken);
     return ethService.submit(await credentials, deusSwapContract,
-        "swapTokensForTokens", [wei, swapType, path1, path2]);
+        "swapTokensForTokens", [wei, BigInt.from(swapType), path1, path2]);
   }
 
   Future<String> _deusSwapTokensForEth(BigInt tokenAmount, String fromToken,
@@ -236,13 +238,13 @@ class DeusSwapServiceAlt {
     final wei = this._getWei(tokenAmount, fromToken);
 
     return ethService.submit(await credentials, deusSwapContract,
-        "swapTokensForEth", [wei, swapType, path]);
+        "swapTokensForEth", [wei, BigInt.from(swapType), path]);
   }
 
   Future<String> _deusSwapEthForTokens(BigInt tokenAmount, String fromToken,
       int swapType, List<EthereumAddress> path) async {
     return ethService.submit(await credentials, deusSwapContract,
-        "swapEthForTokens", [path, swapType],
+        "swapEthForTokens", [path, BigInt.from(swapType)],
         value: EtherAmount.inWei(this._getWei(tokenAmount, fromToken)));
   }
 
@@ -253,7 +255,7 @@ class DeusSwapServiceAlt {
     return _fromWei(amount.first, "ether");
   }
 
-  Future<String> withdrawPayment(listener) async {
+  Future<String> withdrawPayment() async {
     return ethService.submit(await credentials, automaticMarketMakerContract,
         "withdrawPayments", [await address]);
   }
