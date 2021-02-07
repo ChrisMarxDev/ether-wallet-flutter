@@ -139,7 +139,7 @@ class DeusSwapServiceAlt {
   }
 
   // TODO make bigint
-  Future<String> swapTokens(fromToken, toToken, tokenAmount, listener) async {
+  Future<String> swapTokens(fromToken, toToken, tokenAmount) async {
     if (!this.checkWallet()) return null;
     var path = await _getPath(fromToken, toToken);
 

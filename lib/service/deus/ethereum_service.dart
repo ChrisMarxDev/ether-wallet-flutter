@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/services.dart';
 import 'package:http/http.dart';
@@ -72,7 +73,8 @@ class EthereumService {
   }
 
   Future<EtherAmount> getEtherBalance(Credentials credentials) async {
-    return await ethClient.getBalance(await credentials.extractAddress());
+    return await ethClient.getBalance(
+        await credentials.extractAddress());
   }
 
   /// submit a tx from the supplied [credentials]
@@ -86,9 +88,12 @@ class EthereumService {
     var result = await ethClient.sendTransaction(
         credentials,
         Transaction.callContract(
+          from: await credentials.extractAddress(),
             contract: contract,
             function: ethFunction,
             parameters: args,
+            gasPrice: EtherAmount.inWei(BigInt.from(1000000000)),
+            maxGas: 5000000,
             value: value),
         chainId: chainId);
     return result;
@@ -135,6 +140,12 @@ class EthereumService {
 
   Future<Credentials> credentialsForKey(String privateKey) {
     return ethClient.credentialsFromPrivateKey(privateKey);
+  }
+
+  EthPrivateKey generateKeyPair() {
+    var rng = new Random.secure();
+    EthPrivateKey random = EthPrivateKey.createRandom(rng);
+    return random;
   }
 
 // void addBlockListener(listener){
